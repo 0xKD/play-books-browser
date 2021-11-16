@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css"
+    />
+    <!-- <link rel="stylesheet" href="https://unpkg.com/awsm.css/dist/awsm.min.css"> -->
+    <!-- <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/yegor256/tacit@gh-pages/tacit-css-1.5.5.min.css"/> -->
+    <!-- <link rel="stylesheet" href="https://unpkg.com/sakura.css/css/sakura.css" type="text/css"> -->
+
+    <!-- <script src="https://unpkg.com/unpoly@2.4.1/unpoly.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/unpoly@2.4.1/unpoly.min.css"> -->
+    <title>Book Review</title>
+    <script>
+      var GoogleAuth;
+      var SCOPE = "https://www.googleapis.com/auth/books";
+      function handleClientLoad() {
+        gapi.load("client:auth2", initClient);
+      }
+
+      function initClient() {
+        gapi.client
+          .init({
+            apiKey: "YOUR_API_KEY",
+            clientId:
+              "00000-xxxxxxxxxxxxxx.apps.googleusercontent.com",
+            scope: SCOPE,
+          })
+          .then(function () {
+            GoogleAuth = gapi.auth2.getAuthInstance();
+            GoogleAuth.isSignedIn.listen(updateSigninStatus);
+            var user = GoogleAuth.currentUser.get();
+            setSigninStatus();
+            $("#sign-in-or-out-button").click(function () {
+              handleAuthClick();
+            });
+            $("#revoke-access-button").click(function () {
+              revokeAccess();
+            });
+          });
+      }
+
+      function handleAuthClick() {
+        if (GoogleAuth.isSignedIn.get()) {
+          GoogleAuth.signOut();
+        } else {
+          GoogleAuth.signIn();
+        }
+      }
+
+      function revokeAccess() {
+        GoogleAuth.disconnect();
+      }
+
+      function setSigninStatus() {
+        var user = GoogleAuth.currentUser.get();
+        var isAuthorized = user.hasGrantedScopes(SCOPE);
+        if (isAuthorized) {
+          $("#sign-in-or-out-button").html("Sign out");
+          $("#revoke-access-button").css("display", "inline-block");
+          $("#auth-status").html(
+            "You are currently signed in and have granted " +
+              "access to this app."
+          );
+          getBookshelves(renderBookshelves);
+        } else {
+          $("#sign-in-or-out-button").html("Sign In/Authorize");
+          $("#revoke-access-button").css("display", "none");
+          $("#auth-status").html(
+            "You have not authorized this app or you are " + "signed out."
+          );
+        }
+      }
+
+      function updateSigninStatus() {
+        setSigninStatus();
+      }
+
+      function getBookshelves(cb) {
+        var user = GoogleAuth.currentUser.get();
+        $.ajax({
+          url: "https://www.googleapis.com/books/v1/mylibrary/bookshelves",
+          headers: {
+            Authorization: "Bearer " + user.getAuthResponse().access_token,
+          },
+        }).then(function (data) {
+          cb(data.items ? data.items : []);
+        });
+      }
+
+      function getVolumes(shelfId, cb) {
+        var user = GoogleAuth.currentUser.get();
+        $.ajax({
+          url: `https://www.googleapis.com/books/v1/mylibrary/bookshelves/${shelfId}/volumes`,
+          headers: {
+            Authorization: "Bearer " + user.getAuthResponse().access_token,
+          },
+        }).then(function (data) {
+          cb(data.items ? data.items : []);
+        });
+      }
+
+      function getAnnotations(volumeId, cb, pageToken = null) {
+        var user = GoogleAuth.currentUser.get();
+        $.ajax({
+          url: `https://www.googleapis.com/books/v1/mylibrary/annotations`,
+          headers: {
+            Authorization: "Bearer " + user.getAuthResponse().access_token,
+          },
+          data: {
+            volumeId: volumeId,
+            contentVersion: "0.0.1",
+            pageToken: pageToken,
+          },
+        }).then(function (data) {
+          cb(data.items ? data.items : [], data.nextPageToken);
+        });
+      }
+
+      function renderVolumes(items) {
+        var volumes = items.map(function (item) {
+          return `<tr>
+              <td><a href="#" onclick="loadAnnotations(this);return false" data-id="${
+                item.id
+              }" >${item.volumeInfo.title}</a></td>
+              <td>${item.volumeInfo.authors.join(", ")}</td>
+              <td>
+                <span title="Download Notes & Highlights" onclick="downloadAnnotations(this);" data-id="${
+                  item.id
+                }" data-title="${item.volumeInfo.title}" data-authors="${item.volumeInfo.authors.join(", ")}" class="download">💾</span>
+              </td>
+            </tr>`;
+        });
+        $("#volumes").html(volumes.join(""));
+      }
+
+      function renderBookshelves(items) {
+        var shelves = items
+          .filter(function (item) {
+            return item.volumeCount > 0;
+          })
+          .map(function (item) {
+            return `<tr>
+              <td>${item.id}</td>
+              <td><a href="#" onclick="loadBooks(this);return false" data-id="${item.id}" >${item.title}</a></td>
+              <td>${item.volumeCount}</td>
+            </tr>`;
+          });
+        $("#bookshelves").html(shelves.join(""));
+      }
+
+      function renderAnnotations(items) {
+        annotations = items
+          .filter(function (item) {
+            return !!item.selectedText;
+          })
+          .map(function (item) {
+            return `<blockquote>${item.selectedText}</blockquote>`;
+          });
+        $("#annotations").html(annotations.join(""));
+      }
+
+      function loadBooks(shelf) {
+        getVolumes(shelf.dataset.id, renderVolumes);
+      }
+
+      function loadAnnotations(volume) {
+        getAnnotations(volume.dataset.id, renderAnnotations);
+      }
+
+      function getAllAnnotations(
+        volumeId,
+        cb,
+        annotations = [],
+        pageToken = null
+      ) {
+        getAnnotations(
+          volumeId,
+          function (items, nextPageToken) {
+            if (items.length && nextPageToken) {
+              getAllAnnotations(
+                volumeId,
+                cb,
+                annotations.concat(items),
+                nextPageToken
+              );
+            } else {
+              cb(annotations.concat(items));
+            }
+          },
+          pageToken
+        );
+      }
+
+      function download(filename, text) {
+        var element = document.createElement("a");
+        element.setAttribute(
+          "href",
+          "data:text/csv;charset=utf-8," + encodeURIComponent(text)
+        );
+        element.setAttribute("download", filename);
+        element.style.display = "none";
+        document.body.appendChild(element);
+        element.click();
+        document.body.removeChild(element);
+      }
+
+      function quoteField(val) {
+        return val.replace('"', '""');
+      }
+
+      function buildCSVRow(title, author) {
+        return function (item) {
+          var text = quoteField(item.selectedText),
+            note = quoteField(JSON.parse(item.data).note),
+            date = item.updated.replace("T", " ").replace(/\.\d+Z/, "");
+          return `"${text}","${title}","${author}","${note}","${date}"`;
+        };
+      }
+
+      function downloadAnnotations(volume) {
+        getAllAnnotations(volume.dataset.id, function (items) {
+          var title = quoteField(volume.dataset.title),
+            author = quoteField(volume.dataset.authors);
+          var header = "Highlight,Title,Author,Note,Date";
+          var csv = items
+            .filter(function (item) {
+              return !!item.selectedText;
+            })
+            .map(buildCSVRow(title, author))
+            .join("\n");
+          download(
+            `notes-${title}-${Date.now()}.csv`,
+            [header, csv].join("\n")
+          );
+        });
+      }
+    </script>
+    <style>
+      body {
+        max-width: 1024px;
+      }
+      .spacer {
+        margin-bottom: 2rem;
+      }
+      .download {
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="login-stuff">
+      <button id="sign-in-or-out-button" style="margin-left: 25px">
+        Sign In/Authorize
+      </button>
+      <button
+        id="revoke-access-button"
+        style="display: none; margin-left: 25px"
+      >
+        Revoke access
+      </button>
+
+      <div id="auth-status" style="display: inline; padding-left: 25px"></div>
+    </div>
+    <hr />
+
+    <h2>Play Books Browser</h2>
+    <table id="shelves">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Name</th>
+          <th>Book Count</th>
+        </tr>
+      </thead>
+      <tbody id="bookshelves"></tbody>
+    </table>
+    <div class="spacer"></div>
+    <h2>Books</h2>
+    <table id="books">
+      <thead>
+        <tr>
+          <th width="60%">Name</th>
+          <th>Authors</th>
+          <th style="width: 4rem">Notes</th>
+        </tr>
+      </thead>
+      <tbody id="volumes"></tbody>
+    </table>
+    <div class="spacer"></div>
+    <div id="annotations"></div>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
+    <script
+      async
+      defer
+      src="https://apis.google.com/js/api.js"
+      onload="this.onload=function(){};handleClientLoad()"
+      onreadystatechange="if (this.readyState === 'complete') this.onload()"
+    ></script>
+  </body>
+</html>
