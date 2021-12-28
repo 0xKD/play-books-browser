@@ -25,9 +25,8 @@
       function initClient() {
         gapi.client
           .init({
-            apiKey: "YOUR_API_KEY",
-            clientId:
-              "00000-xxxxxxxxxxxxxx.apps.googleusercontent.com",
+            apiKey: "$GOOGLE_API_KEY",
+            clientId: "$GOOGLE_CLIENT_ID",
             scope: SCOPE,
           })
           .then(function () {
@@ -92,15 +91,19 @@
         });
       }
 
-      function getVolumes(shelfId, cb) {
+      function getVolumes(shelfId, cb, startIndex = 0) {
         var user = GoogleAuth.currentUser.get();
         $.ajax({
           url: `https://www.googleapis.com/books/v1/mylibrary/bookshelves/${shelfId}/volumes`,
           headers: {
             Authorization: "Bearer " + user.getAuthResponse().access_token,
           },
+          data: {
+            startIndex: startIndex,
+            maxResults: 40,
+          },
         }).then(function (data) {
-          cb(data.items ? data.items : []);
+          cb(data.items ? data.items : [], data.totalItems || 0);
         });
       }
 
@@ -126,7 +129,8 @@
           return `<tr>
               <td><a href="#" onclick="loadAnnotations(this);return false" data-id="${
                 item.id
-              }" >${item.volumeInfo.title}</a></td>
+              }" data-title="${item.volumeInfo.title}">
+                ${item.volumeInfo.title}</a></td>
               <td>${item.volumeInfo.authors.join(", ")}</td>
               <td>
                 <span title="Download Notes & Highlights" onclick="downloadAnnotations(this);" data-id="${
@@ -146,30 +150,46 @@
           .map(function (item) {
             return `<tr>
               <td>${item.id}</td>
-              <td><a href="#" onclick="loadBooks(this);return false" data-id="${item.id}" >${item.title}</a></td>
+              <td><a href="#" onclick="loadBooks(this, renderVolumes);return false" data-id="${item.id}" >${item.title}</a></td>
               <td>${item.volumeCount}</td>
             </tr>`;
           });
         $("#bookshelves").html(shelves.join(""));
       }
 
-      function renderAnnotations(items) {
-        annotations = items
-          .filter(function (item) {
-            return !!item.selectedText;
-          })
-          .map(function (item) {
-            return `<blockquote>${item.selectedText}</blockquote>`;
-          });
-        $("#annotations").html(annotations.join(""));
+      function renderAnnotations(title) {
+        return function (items) {
+          annotations = items
+            .filter(function (item) {
+              return !!item.selectedText;
+            })
+            .map(function (item) {
+              return `<blockquote>${item.selectedText}</blockquote>`;
+            });
+          $("#annotations").html(`<h2>${title}</h2>` + annotations.join(""));
+        };
       }
 
-      function loadBooks(shelf) {
-        getVolumes(shelf.dataset.id, renderVolumes);
+      function loadBooks(shelf, cb, volumes = [], startIndex = 0) {
+        getVolumes(
+          shelf.dataset.id,
+          function (items, totalItems) {
+            var combined = volumes.concat(items);
+            if (items.length && totalItems && combined.length < totalItems) {
+              loadBooks(shelf, cb, combined, combined.length);
+            } else {
+              cb(combined);
+            }
+          },
+          startIndex
+        );
       }
 
       function loadAnnotations(volume) {
-        getAnnotations(volume.dataset.id, renderAnnotations);
+        getAnnotations(
+          volume.dataset.id,
+          renderAnnotations(volume.dataset.title)
+        );
       }
 
       function getAllAnnotations(
