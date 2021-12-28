@@ -1,5 +1,7 @@
 #!/bin/bash
+set -e
 
+# make source .env visible to envsubst
 set -a
 source .env
 mkdir -p dist/
