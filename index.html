@@ -230,13 +230,13 @@
       }
 
       function quoteField(val) {
-        return val.replace('"', '""');
+        return val ? val.replace('"', '""') : "";
       }
 
       function buildCSVRow(title, author) {
         return function (item) {
           var text = quoteField(item.selectedText),
-            note = quoteField(JSON.parse(item.data).note),
+            note = quoteField(JSON.parse(item.data ? item.data : "{}").note),
             date = item.updated.replace("T", " ").replace(/\.\d+Z/, "");
           return `"${text}","${title}","${author}","${note}","${date}"`;
         };
